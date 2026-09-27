@@ -24,7 +24,7 @@ it('only explicitly applies the verified package after click',async()=>{
 });
 it('advanced deployment offers manual release page, never an installer action',async()=>{
  vi.mocked(invoke).mockResolvedValue({...state,phase:'available',mode:'advanced'});render(<UpdateCenter hasDraft={()=>false}/>);
- await screen.findByText(/开发或自定义部署/);expect(screen.queryByRole('button',{name:/下载 v/})).toBeNull();expect(screen.getByRole('link',{name:/手动下载/}).getAttribute('href')).toBe('https://github.com/CNDDVP/pulse-windows/releases');
+ await screen.findByText(/开发或自定义部署/);expect(screen.queryByRole('button',{name:/下载 v/})).toBeNull();expect(screen.getByRole('link',{name:/手动下载/}).getAttribute('href')).toBe('https://github.com/CNDDVP/Pulse/releases');
 });
 it('en renders the update method with its honest signature caveat (component-level en assertion)',async()=>{
  vi.mocked(invoke).mockResolvedValue({...state,phase:'available',mode:'advanced'});

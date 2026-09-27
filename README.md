@@ -10,17 +10,17 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/CNDDVP/pulse-windows/releases/latest"><img src="https://img.shields.io/github/v/release/CNDDVP/pulse-windows?color=00A86B" alt="Latest Release"></a>
-  <a href="https://github.com/CNDDVP/pulse-windows/actions/workflows/ci.yml"><img src="https://github.com/CNDDVP/pulse-windows/actions/workflows/ci.yml/badge.svg" alt="CI Build"></a>
+  <a href="https://github.com/CNDDVP/Pulse/releases/latest"><img src="https://img.shields.io/github/v/release/CNDDVP/Pulse?color=00A86B" alt="Latest Release"></a>
+  <a href="https://github.com/CNDDVP/Pulse/actions/workflows/ci.yml"><img src="https://github.com/CNDDVP/Pulse/actions/workflows/ci.yml/badge.svg" alt="CI Build"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D6?logo=windows" alt="Windows 10/11 x64">
   <img src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white" alt="Tauri 2">
   <img src="https://img.shields.io/badge/Rust-%E2%89%A51.75-DEA584?logo=rust" alt="Rust">
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3DA639" alt="License"></a>
-  <a href="https://github.com/CNDDVP/pulse-windows/stargazers"><img src="https://img.shields.io/github/stars/CNDDVP/pulse-windows?color=FFD700" alt="GitHub Stars"></a>
-  <a href="https://github.com/CNDDVP/pulse-windows/releases"><img src="https://img.shields.io/github/downloads/CNDDVP/pulse-windows/total" alt="Downloads"></a>
-  <a href="https://github.com/CNDDVP/pulse-windows/commits/main"><img src="https://img.shields.io/github/last-commit/CNDDVP/pulse-windows" alt="Last Commit"></a>
-  <a href="https://github.com/CNDDVP/pulse-windows/issues"><img src="https://img.shields.io/github/issues/CNDDVP/pulse-windows" alt="Open Issues"></a>
+  <a href="https://github.com/CNDDVP/Pulse/stargazers"><img src="https://img.shields.io/github/stars/CNDDVP/Pulse?color=FFD700" alt="GitHub Stars"></a>
+  <a href="https://github.com/CNDDVP/Pulse/releases"><img src="https://img.shields.io/github/downloads/CNDDVP/Pulse/total" alt="Downloads"></a>
+  <a href="https://github.com/CNDDVP/Pulse/commits/main"><img src="https://img.shields.io/github/last-commit/CNDDVP/Pulse" alt="Last Commit"></a>
+  <a href="https://github.com/CNDDVP/Pulse/issues"><img src="https://img.shields.io/github/issues/CNDDVP/Pulse" alt="Open Issues"></a>
 </p>
 
 <p align="center">
@@ -33,7 +33,7 @@
 
 采用 **Tauri 2 + Rust + React 19 + Win32 原生调用** 架构，针对 Windows 11/10 进行了深度适配与架构加固。
 
-> **v0.6.6 亮点**：StepFun 网页会话链路 36 项复审闭环——自动续期死锁修复、多账号扫码隔离、用量明细分页与去重。完整变更见 [Release Notes](https://github.com/CNDDVP/pulse-windows/releases/tag/v0.6.6) 与 [CHANGELOG](CHANGELOG.md)。
+> **v0.6.6 亮点**：StepFun 网页会话链路 36 项复审闭环——自动续期死锁修复、多账号扫码隔离、用量明细分页与去重。完整变更见 [Release Notes](https://github.com/CNDDVP/Pulse/releases/tag/v0.6.6) 与 [CHANGELOG](CHANGELOG.md)。
 
 ---
 
@@ -145,7 +145,7 @@ Pulse 展示的每个百分比都来自服务商自身的应答——使用各�
 
 ## 📥 下载与安装
 
-Pulse for Windows 提供两种分发形态（均在 [Releases](https://github.com/CNDDVP/pulse-windows/releases/latest) 页面，随包附带 `SHA256SUMS.txt` 校验文件）：
+Pulse for Windows 提供两种分发形态（均在 [Releases](https://github.com/CNDDVP/Pulse/releases/latest) 页面，随包附带 `SHA256SUMS.txt` 校验文件）：
 
 | 分发版本 | 文件名 | 适用场景 | 说明 |
 |---|---|---|---|
@@ -168,7 +168,7 @@ Pulse for Windows 提供两种分发形态（均在 [Releases](https://github.co
 
 ```bash
 # 1. 克隆代码仓库
-git clone https://github.com/CNDDVP/pulse-windows.git
+git clone https://github.com/CNDDVP/Pulse.git
 cd pulse-windows
 
 # 2. 安装 Node 依赖

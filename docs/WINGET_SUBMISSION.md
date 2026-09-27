@@ -38,7 +38,7 @@
 
 ## 前置条件（提交前逐项确认）
 
-1. 目标版本已在 `CNDDVP/pulse-windows` 正式发布 GitHub Release（**非 draft**、非 prerelease），
+1. 目标版本已在 `CNDDVP/Pulse` 正式发布 GitHub Release（**非 draft**、非 prerelease），
    tag 形如 `v0.6.6`，资产名精确为 `Pulse-0.6.6-windows-x64-setup.exe`（生成器按此名拼 URL）。
 2. `release-artifacts/SHA256SUMS.txt` 与 Release 资产一致（发布流水线已回验）。
 3. 当前构建为 **未签名**（BUILD_INFO `signing: unsigned`）：winget-pkgs 接受未签名安装包，
@@ -103,7 +103,7 @@ winget-pkgs `.editorconfig` 的 `[*] end_of_line = crlf` 工作区要求——�
    首次上架属 new package，标题用 **`New package: CNDDVP.PulseForWindows version 0.6.6`**
    （后续版本更新用 `Update: CNDDVP.PulseForWindows to <新版本>`；勿写 "Add version:"/"v" 前缀）。
    描述中附：
-   - 项目主页 `https://github.com/CNDDVP/pulse-windows` 与 Release 页；
+   - 项目主页 `https://github.com/CNDDVP/Pulse` 与 Release 页；
    - 安装包直链与 SHA256（与 manifest 中 `InstallerSha256` 一致）；
    - 如实说明：未签名（SmartScreen 会提示）；安装包为 Tauri NSIS、按用户级（per-user）安装；
      缺 WebView2 时由安装器引导安装。
@@ -125,7 +125,7 @@ winget-pkgs `.editorconfig` 的 `[*] end_of_line = crlf` 工作区要求——�
 - **winget 侧**：`winget upgrade` 的版本对比完全依赖 winget-pkgs 仓库里的 manifest 演进——
   即每次发版都需要一次人工 PR 更新 manifest，winget 才能看到新版本；manifest 本身不含
   "自动发现 GitHub 新 Release"的机制。
-- **应用侧**：Pulse 自带更新器独立工作，只接受 `CNDDVP/pulse-windows` 完整稳定版 Release
+- **应用侧**：Pulse 自带更新器独立工作，只接受 `CNDDVP/Pulse` 完整稳定版 Release
   （SHA256 校验、白名单、回滚，详见 `docs/UPDATE_SYSTEM_DESIGN.md`）。两条通道互补：
   winget 管安装/全局升级入口，应用内更新器管已装实例的自更新。
 - manifest 中 `UpgradeBehavior: install` 表示升级时直接运行新版 NSIS 安装器覆盖安装

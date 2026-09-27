@@ -14,9 +14,9 @@
 |---|---|---|---|---|---|
 | `../Pulse-upstream` | qunqin24/Pulse | (detached v1.2.1) | 68fa829f | 0 | 上游参考，不开发 |
 | `../pulse-windows` | (无) | master | 7162622a | 1（CHANGELOG） | 历史开发副本，保留 |
-| `../pulse-windows-clean` | CNDDVP/pulse-windows | main | d8c40656 | 0 | 旧对照副本，保留 |
-| `../pulse-windows-release` | CNDDVP/pulse-windows | main | 094d18ce | 1（CHANGELOG） | 发布工作副本 |
-| `../pulse-windows-main`（本轮新建） | CNDDVP/pulse-windows | audit/v0.3.3-polish | 29c018c→ | 审计中 | 本轮工作目录 |
+| `../pulse-windows-clean` | CNDDVP/Pulse | main | d8c40656 | 0 | 旧对照副本，保留 |
+| `../pulse-windows-release` | CNDDVP/Pulse | main | 094d18ce | 1（CHANGELOG） | 发布工作副本 |
+| `../pulse-windows-main`（本轮新建） | CNDDVP/Pulse | audit/v0.3.3-polish | 29c018c→ | 审计中 | 本轮工作目录 |
 
 两份 CHANGELOG 未提交差异已存档于 `.audit-snapshots/`（dev 37 行 / release 37 行），未吸收前不覆盖。
 

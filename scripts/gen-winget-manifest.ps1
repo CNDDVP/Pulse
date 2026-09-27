@@ -8,7 +8,7 @@
 param (
     [string]$ArtifactsDir = "release-artifacts",
     [string]$Version = "",
-    [string]$Repo = "CNDDVP/pulse-windows",
+    [string]$Repo = "CNDDVP/Pulse",
     [string]$PackageIdentifier = "CNDDVP.PulseForWindows",
     [string]$ReleaseTag = "",
     [switch]$SelfTest
@@ -310,7 +310,7 @@ function Invoke-SelfTest {
         $sha = Get-InstallerChecksum -SumsPath (Join-Path $base "SHA256SUMS.txt") -InstallerName $installerName
         if ($sha -ne $script:FakeSha) { throw "自测失败：checksum 解析结果与固定假 SHA 不一致" }
         $written = New-ManifestFiles -OutputDir $outDir -Id "CNDDVP.PulseForWindows" -Ver $script:FakeVersion `
-            -RepoSlug "CNDDVP/pulse-windows" -Tag "v$($script:FakeVersion)" -Sha256 $sha `
+            -RepoSlug "CNDDVP/Pulse" -Tag "v$($script:FakeVersion)" -Sha256 $sha `
             -InstallerFileName $installerName -ReleaseDate "2020-01-01"
         $expectedNames = @("CNDDVP.PulseForWindows.yaml", "CNDDVP.PulseForWindows.installer.yaml", "CNDDVP.PulseForWindows.locale.en-US.yaml")
         foreach ($name in $expectedNames) {
@@ -318,14 +318,14 @@ function Invoke-SelfTest {
         }
         if ($written.Count -ne 3) { throw "自测失败：生成文件数 $($written.Count) != 3" }
         Assert-GeneratedManifests -OutputDir $outDir -Id "CNDDVP.PulseForWindows" -Ver $script:FakeVersion `
-            -RepoSlug "CNDDVP/pulse-windows" -Tag "v$($script:FakeVersion)" -Sha256 $script:FakeSha `
+            -RepoSlug "CNDDVP/Pulse" -Tag "v$($script:FakeVersion)" -Sha256 $script:FakeSha `
             -InstallerFileName $installerName
         # 可选字段分支：ReleaseDate 传入时必须落盘为期望日期。
         $iMapTest = ConvertFrom-SimpleYaml -Text ([System.IO.File]::ReadAllText((Join-Path $outDir "CNDDVP.PulseForWindows.installer.yaml")))
         Assert-Field $iMapTest "ReleaseDate" "2020-01-01" "installer(自测)"
         # 与期望内容精确回读：安装包 URL 必须逐字等于 GitHub Releases 形态。
         $installerText = [System.IO.File]::ReadAllText((Join-Path $outDir "CNDDVP.PulseForWindows.installer.yaml"))
-        if ($installerText -notmatch [regex]::Escape("InstallerUrl: https://github.com/CNDDVP/pulse-windows/releases/download/v$($script:FakeVersion)/$installerName")) {
+        if ($installerText -notmatch [regex]::Escape("InstallerUrl: https://github.com/CNDDVP/Pulse/releases/download/v$($script:FakeVersion)/$installerName")) {
             throw "自测失败：InstallerUrl 不符合期望的 GitHub Releases 形态"
         }
         Write-Host "[自测] 正向用例通过：三件 manifest 生成 + 解析回读逐字段一致" -ForegroundColor Green

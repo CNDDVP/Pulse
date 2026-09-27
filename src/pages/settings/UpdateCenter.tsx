@@ -71,7 +71,7 @@ export function UpdateCenter({hasDraft}: {hasDraft: () => boolean}) {
    {status.phase==="downloading"&&<button className={btnGhost} onClick={()=>void invoke("update_cancel").catch(e=>setError(String(e)))}>{t("settings.update.cancel_download")}</button>}
    {status.phase==="ready"&&<button className={btnGhost} disabled={busy} onClick={()=>void act("update_apply")}>{t("settings.update.apply",{version:status.offer?.version??""})}</button>}
    {status.phase==="ready"&&<button className={btnGhost} disabled={busy} onClick={()=>void act("update_discard")}>{t("settings.update.discard_upgrade")}</button>}
-   <a className={btnGhost} href="https://github.com/CNDDVP/pulse-windows/releases" target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); void invoke("open_external_url", { url: "https://github.com/CNDDVP/pulse-windows/releases" }).catch(console.error); }}>{t("settings.update.release_page")}</a>
+   <a className={btnGhost} href="https://github.com/CNDDVP/Pulse/releases" target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); void invoke("open_external_url", { url: "https://github.com/CNDDVP/Pulse/releases" }).catch(console.error); }}>{t("settings.update.release_page")}</a>
   </div>
   {/* offer.notes 来自发布通道（Rust 透传），原样展示。TODO(EN-backend) */}
   {status.offer&&<details className="mt-2 p-2 bg-[var(--surface-2)] rounded border border-[var(--border)]"><summary className="cursor-pointer font-medium text-[var(--text-1)]">{t("settings.update.notes_title",{version:status.offer.version})}</summary><pre className="whitespace-pre-wrap font-sans mt-2 text-[var(--text-2)] text-xs">{status.offer.notes||t("settings.update.no_notes")}</pre></details>}

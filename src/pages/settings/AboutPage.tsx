@@ -156,7 +156,7 @@ export function AboutPage({hasDraft}: {hasDraft: () => boolean}) {
     [t("settings.about.row.sha"), runtime?.exe_sha256 ? `${runtime.exe_sha256.slice(0, 16)}...${runtime.exe_sha256.slice(-16)}` : t("settings.about.hashing")],
     [t("settings.about.row.data_dir"), runtime?.data_dir || t("settings.about.reading")],
     [t("settings.about.row.exe_path"), runtime?.exe_path || t("settings.about.reading")],
-    [t("settings.about.row.repo"), "https://github.com/CNDDVP/pulse-windows"],
+    [t("settings.about.row.repo"), "https://github.com/CNDDVP/Pulse"],
     [t("settings.about.row.stack"), "Tauri 2 · Rust · React 19 · Tailwind CSS"],
   ];
 
@@ -228,7 +228,7 @@ export function AboutPage({hasDraft}: {hasDraft: () => boolean}) {
       <Section title={t("settings.about.update_title")} icon="⬆️" subtitle={t("settings.about.license_note")}
         aside={
           <div className="flex gap-2">
-            <a className={btnGhost} href="https://github.com/CNDDVP/pulse-windows" target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); void invoke("open_external_url", { url: "https://github.com/CNDDVP/pulse-windows" }).catch(console.error); }}>{t("settings.about.repo_link")}</a>
+            <a className={btnGhost} href="https://github.com/CNDDVP/Pulse" target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); void invoke("open_external_url", { url: "https://github.com/CNDDVP/Pulse" }).catch(console.error); }}>{t("settings.about.repo_link")}</a>
             <a className={btnGhost} href="https://github.com/qunqin24/Pulse" target="_blank" rel="noreferrer" onClick={e => { e.preventDefault(); void invoke("open_external_url", { url: "https://github.com/qunqin24/Pulse" }).catch(console.error); }}>{t("settings.about.upstream_link")}</a>
           </div>
         }>

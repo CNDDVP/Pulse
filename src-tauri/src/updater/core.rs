@@ -7,10 +7,10 @@ use std::{
     path::{Path, PathBuf},
 };
 pub type Result<T> = std::result::Result<T, String>;
-pub const REPO: &str = "https://github.com/CNDDVP/pulse-windows";
-pub const API: &str = "https://api.github.com/repos/CNDDVP/pulse-windows/releases/latest";
+pub const REPO: &str = "https://github.com/CNDDVP/Pulse";
+pub const API: &str = "https://api.github.com/repos/CNDDVP/Pulse/releases/latest";
 // 备用检查通道：github.com 的 Web 资产，不受 api.github.com 未认证 60 次/小时限流约束
-pub const ATOM: &str = "https://github.com/CNDDVP/pulse-windows/releases.atom";
+pub const ATOM: &str = "https://github.com/CNDDVP/Pulse/releases.atom";
 pub const FILES: &[&str] = &[
     "Pulse.exe",
     "portable.flag",
@@ -489,17 +489,17 @@ mod tests {
     fn atom_feed_latest_tag_extraction() {
         let feed = r#"<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <id>tag:github.com,2008:https://github.com/CNDDVP/pulse-windows/releases</id>
-  <link rel="self" href="https://github.com/CNDDVP/pulse-windows/releases.atom"/>
+  <id>tag:github.com,2008:https://github.com/CNDDVP/Pulse/releases</id>
+  <link rel="self" href="https://github.com/CNDDVP/Pulse/releases.atom"/>
   <title>Release notes from pulse-windows</title>
   <entry>
     <id>tag:github.com,2008:Repository/1375447670/v0.6.6</id>
-    <link rel="alternate" type="text/html" href="https://github.com/CNDDVP/pulse-windows/releases/tag/v0.6.6"/>
+    <link rel="alternate" type="text/html" href="https://github.com/CNDDVP/Pulse/releases/tag/v0.6.6"/>
     <title>Pulse for Windows v0.6.6</title>
   </entry>
   <entry>
     <id>tag:github.com,2008:Repository/1375447670/v0.6.5</id>
-    <link rel="alternate" type="text/html" href="https://github.com/CNDDVP/pulse-windows/releases/tag/v0.6.5"/>
+    <link rel="alternate" type="text/html" href="https://github.com/CNDDVP/Pulse/releases/tag/v0.6.5"/>
     <title>Pulse for Windows v0.6.5</title>
   </entry>
 </feed>"#;
@@ -508,12 +508,12 @@ mod tests {
         // 无条目 / 版本不合法都要报错，不得静默返回空
         assert!(latest_tag_from_atom("<feed><entry/></feed>").is_err());
         assert!(latest_tag_from_atom(
-            r#"<link href="https://github.com/CNDDVP/pulse-windows/releases/tag/not-semver"/>"#
+            r#"<link href="https://github.com/CNDDVP/Pulse/releases/tag/not-semver"/>"#
         )
         .is_err());
         // 前缀相同但非 tag 链接不参与匹配
         assert!(latest_tag_from_atom(
-            r#"<link href="https://github.com/CNDDVP/pulse-windows/releases"/>"#
+            r#"<link href="https://github.com/CNDDVP/Pulse/releases"/>"#
         )
         .is_err());
     }
