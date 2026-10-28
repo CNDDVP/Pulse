@@ -346,7 +346,7 @@ where F: Fn() -> bool {
     extra_scan_paths(extra,&mut out,&mut truncated,is_cancelled)?;
     Ok((out,truncated))
 }
-fn database(path:&Path)->Result<Connection,String>{
+pub(crate) fn database(path:&Path)->Result<Connection,String>{
     let db=Connection::open(path).map_err(|_|"无法打开统计缓存")?;
     db.busy_timeout(std::time::Duration::from_secs(2)).map_err(|_|"统计缓存锁定")?;
     db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY,source TEXT,size INTEGER,mtime INTEGER,prefix TEXT,offset INTEGER,state TEXT); CREATE TABLE IF NOT EXISTS events(path TEXT,source TEXT,event_id TEXT,ts INTEGER,model TEXT,input INTEGER,output INTEGER,cache_read INTEGER,cache_write INTEGER,partial INTEGER,PRIMARY KEY(path,event_id)); CREATE INDEX IF NOT EXISTS idx_events_source_ts ON events(source, ts); CREATE TABLE IF NOT EXISTS daily_archive(day TEXT,source TEXT,model TEXT,input INTEGER,output INTEGER,cache_read INTEGER,cache_write INTEGER,PRIMARY KEY(day,source,model)); CREATE TABLE IF NOT EXISTS daily_active(day TEXT PRIMARY KEY,seconds INTEGER); CREATE TABLE IF NOT EXISTS session_titles(path TEXT PRIMARY KEY,title TEXT NOT NULL); CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value INTEGER);").map_err(|_|"无法初始化统计缓存")?;Ok(db)
@@ -944,7 +944,7 @@ fn month_window_note(first:chrono::NaiveDate,today:chrono::NaiveDate)->Option<St
 /// 若每次扫描都按当前系统时区切天，时区变更会把同一批事件重切到新 day 键而旧行永不修正
 /// （趋势按 day 求和即永久双计）；冻结偏移保证 day 键稳定，Summary 每次全量重算不受影响。
 /// day 键统一使用 meta 冻结的归档时区偏移（缺省回退当前本地偏移）。
-fn frozen_tz(db:&Connection)->chrono::FixedOffset{
+pub(crate) fn frozen_tz(db:&Connection)->chrono::FixedOffset{
     let secs:Option<i64>=db.query_row("SELECT value FROM meta WHERE key='archive_tz_offset_secs'",[],|r|r.get(0)).ok();
     secs.and_then(|s|i32::try_from(s).ok()).and_then(chrono::FixedOffset::east_opt).unwrap_or_else(||*chrono::Local::now().offset())
 }
@@ -1093,7 +1093,7 @@ pub fn daily_active(db_path:&Path)->Result<Vec<(String,u64)>,String>{
     Ok(rows.flatten().collect())
 }
 
-fn estimate_model_cost(model: &str, counts: &[u64; 4]) -> Option<f64> {
+pub(crate) fn estimate_model_cost(model: &str, counts: &[u64; 4]) -> Option<f64> {
     let m = model.to_lowercase();
     let (in_p, out_p, cr_p, cw_p) = if m.contains("claude-3-5-sonnet") || m.contains("claude-3-7-sonnet") || m.contains("claude-sonnet") {
         (3.0, 15.0, 0.30, 3.75)
@@ -1101,19 +1101,21 @@ fn estimate_model_cost(model: &str, counts: &[u64; 4]) -> Option<f64> {
         (15.0, 75.0, 1.50, 18.75)
     } else if m.contains("claude-3-5-haiku") || m.contains("claude-haiku") {
         (0.80, 4.0, 0.08, 1.00)
-    } else if m.contains("gpt-4o-mini") {
+    } else if m.contains("gpt-4o-mini") || m.contains("gpt-5-mini") || m.contains("gpt-5.5-mini") {
         (0.15, 0.60, 0.075, 0.0)
     } else if m.contains("gpt-4o") {
         (2.50, 10.0, 1.25, 0.0)
+    } else if m.contains("gpt-5") || m.contains("gpt-6") {
+        (2.50, 10.0, 0.625, 0.0)
     } else if m.contains("o1") {
         (15.0, 60.0, 7.50, 0.0)
-    } else if m.contains("o3-mini") {
+    } else if m.contains("o3-mini") || m.contains("o4-mini") {
         (1.10, 4.40, 0.55, 0.0)
     } else if m.contains("deepseek") {
         (0.14, 0.28, 0.014, 0.0)
-    } else if m.contains("gemini-1.5-flash") || m.contains("gemini-2.0-flash") || m.contains("gemini-2.5-flash") {
+    } else if m.contains("gemini-1.5-flash") || m.contains("gemini-2.0-flash") || m.contains("gemini-2.5-flash") || m.contains("gemini-3") && m.contains("flash") {
         (0.075, 0.30, 0.01875, 0.0)
-    } else if m.contains("gemini-1.5-pro") || m.contains("gemini-2.5-pro") {
+    } else if m.contains("gemini-1.5-pro") || m.contains("gemini-2.5-pro") || m.contains("gemini-3") && m.contains("pro") {
         (1.25, 5.00, 0.3125, 0.0)
     } else {
         // 未知模型不计价（A14）：裸 "flash"/"pro" 兜底会把其他厂商同名子串误套 gemini 价格。

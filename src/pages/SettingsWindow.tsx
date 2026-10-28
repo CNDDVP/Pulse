@@ -28,16 +28,21 @@ import { NotificationsPage } from "./settings/NotificationsPage";
 import { HotkeysPage } from "./settings/HotkeysPage";
 import { AboutPage } from "./settings/AboutPage";
 import { DiagnosticsPage } from "./settings/DiagnosticsPage";
+import { ExtensionsPage } from "./settings/ExtensionsPage";
+import { CodexSignalsPanel } from "../components/CodexSignalsPanel";
+import { MetricTrendLine } from "../components/MetricTrendLine";
+import { formatMetricValue } from "../lib/metricsFormat";
 
 declare const __APP_VERSION__: string;
 
-type View = { kind: "general" | "spend" | "accounts" | "notifications" | "hotkeys" | "diagnostics" | "about" } | { kind: "account"; id: string };
+type View = { kind: "general" | "spend" | "extensions" | "accounts" | "notifications" | "hotkeys" | "diagnostics" | "about" } | { kind: "account"; id: string };
 type ToastKind = "success" | "info" | "error";
 
 // title/keywords 存 i18n key；渲染与搜索时经 t() 取当前语言的标题与搜索关键词。
 const PAGES: { kind: Exclude<View, { kind: "account" }>["kind"]; title: string; icon: string; group: "pulse" | "app"; keywords: string }[] = [
   { kind: "general", title: "settings.page.general", icon: "⚙️", group: "pulse", keywords: "settings.page.general.kw" },
   { kind: "spend", title: "spend.title", icon: "📊", group: "pulse", keywords: "settings.page.spend.kw" },
+  { kind: "extensions", title: "settings.page.extensions", icon: "🧩", group: "pulse", keywords: "settings.page.extensions.kw" },
   { kind: "notifications", title: "settings.page.notifications", icon: "🔔", group: "app", keywords: "settings.page.notifications.kw" },
   { kind: "hotkeys", title: "settings.page.hotkeys", icon: "⌨", group: "app", keywords: "settings.page.hotkeys.kw" },
   { kind: "diagnostics", title: "settings.page.diagnostics", icon: "🩺", group: "app", keywords: "settings.page.diagnostics.kw" },
@@ -714,7 +719,27 @@ export function SettingsWindow({ initialSettings, usages: externalUsages, onSave
 
         <div className="flex-1 overflow-y-auto p-6">
           {view.kind === "general" && <GeneralPage settings={settings} update={update} screens={screens} usages={usages} busy={busy} onRefreshAll={refreshAll} toast={showToast} />}
-          <div className={view.kind === "spend" ? "" : "hidden"}><TokenSpend active={view.kind === "spend"} settings={settings} onSubscriptionsSaved={applySubscriptions} onScanPathsSaved={applyScanPaths} /></div>
+          <div className={view.kind === "spend" ? "" : "hidden"}><TokenSpend active={view.kind === "spend"} settings={settings} onSubscriptionsSaved={applySubscriptions} onScanPathsSaved={applyScanPaths} onUpdateSettings={p => update(p)} /></div>
+          {view.kind === "extensions" && (
+            <ExtensionsPage
+              settings={settings}
+              onToggleExtension={(aid, enabled) => {
+                const curCfg = settings.providers[aid];
+                if (!curCfg) return;
+                const nextSettings: AppSettings = {
+                  ...settings,
+                  providers: {
+                    ...settings.providers,
+                    [aid]: { ...curCfg, enabled },
+                  },
+                };
+                setSettings(nextSettings);
+                void persist(nextSettings, "");
+              }}
+              onOpenAccount={aid => setView({ kind: "account", id: aid })}
+              toast={showToast}
+            />
+          )}
           {view.kind === "notifications" && <NotificationsPage settings={settings} update={update} toast={showToast} />}
           {view.kind === "hotkeys" && <HotkeysPage settings={settings} save={saveHotkeys} onError={m => m && showToast("error", m)} />}
           {view.kind === "diagnostics" && <DiagnosticsPage usages={usages} settings={settings} busy={busy} setBusy={setBusy} toast={showToast} open={id => setView({ kind: "account", id })} />}
@@ -1137,6 +1162,59 @@ export function SettingsWindow({ initialSettings, usages: externalUsages, onSave
                       <Switch checked={c.split_model_groups} onChange={v => patch(id, { split_model_groups: v })} label={t("settings.acct.split")} />
                     </Row>
                   )}
+                  <Row title={t("detail_card.setting_title")} subtitle={t("detail_card.setting_sub")}>
+                    <Switch
+                      checked={!!c.detailed_card}
+                      onChange={v => patch(id, { detailed_card: v })}
+                      label={t("detail_card.setting_title")}
+                    />
+                  </Row>
+                  {(c.provider_id === "deepseek" || c.provider_id === "extension" || (reading && reading.windows.length === 0 && reading.balances.length > 0)) && (
+                    <Field label={t("ext.balance_basis_label")} hint={t("ext.balance_basis_hint")}>
+                      <select
+                        className={selectCls}
+                        value={c.balance_basis || "since_top_up"}
+                        onChange={e => patch(id, { balance_basis: (e.target.value as ProviderConfig["balance_basis"]) || "since_top_up" })}
+                      >
+                        <option value="since_top_up">{t("ext.basis.since_top_up")}</option>
+                        <option value="balance_only">{t("ext.basis.balance_only")}</option>
+                        <option value="budget">{t("ext.basis.budget")}</option>
+                      </select>
+                      {c.balance_basis === "budget" && (
+                        <div className="mt-2">
+                          <label className="block text-xs text-[var(--text-2)] mb-1">{t("ext.budget_amount_label")}</label>
+                          <input
+                            type="number"
+                            min={0.01}
+                            step="any"
+                            className={inputCls}
+                            value={c.balance_budget ?? ""}
+                            onChange={e => patch(id, { balance_budget: e.target.value === "" ? null : Math.max(0.01, Number(e.target.value)) })}
+                          />
+                        </div>
+                      )}
+                    </Field>
+                  )}
+                  {c.provider_id === "codex" && (
+                    <>
+                      <Row title={t("codex_reset.settings_title")} subtitle={t("codex_reset.settings_sub")}>
+                        <Switch
+                          checked={settings.show_codex_reset_announcements ?? true}
+                          onChange={v => update({ show_codex_reset_announcements: v })}
+                          label={t("codex_reset.settings_title")}
+                        />
+                      </Row>
+                      {c.use_local && !c.credential_configured && (
+                        <Row title={t("codex_credits.setting_title")} subtitle={t("codex_credits.setting_sub")}>
+                          <Switch
+                            checked={!!c.show_codex_reset_credits}
+                            onChange={v => patch(id, { show_codex_reset_credits: v })}
+                            label={t("codex_credits.setting_title")}
+                          />
+                        </Row>
+                      )}
+                    </>
+                  )}
                 </Section>
 
                 {reading && reading.balances.length > 0 && (
@@ -1220,6 +1298,26 @@ export function SettingsWindow({ initialSettings, usages: externalUsages, onSave
                   {reading?.error_code === "timeout" && <p className="text-[11px] text-[var(--warn)]">{t("settings.next.timeout")}</p>}
                   {reading?.error_code === "missing_credentials" && <p className="text-[11px] text-[var(--warn)]">{t("settings.next.missing_credentials")}</p>}
                 </Section>
+
+                {reading && reading.metrics && reading.metrics.length > 0 && (
+                  <Section title={t("ext.metrics_title")} icon="📉">
+                    <div className="space-y-3">
+                      {reading.metrics.map(m => (
+                        <div key={m.id} className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] space-y-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-semibold text-[var(--text-1)]">{m.label}</span>
+                            <span className="font-mono text-sm font-bold text-[var(--text-1)]">{formatMetricValue(m.value, m.unit)}</span>
+                          </div>
+                          {(m.history?.length ?? 0) >= 2 && (
+                            <MetricTrendLine history={m.history} unit={m.unit} height={64} interactive={true} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </Section>
+                )}
+
+                {c.provider_id === "codex" && <CodexSignalsPanel />}
               </div>
             );
           })()}

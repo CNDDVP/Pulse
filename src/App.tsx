@@ -3,7 +3,7 @@ import {useEffect,useRef,useState} from "react";
 import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {getCurrentWebviewWindow} from "@tauri-apps/api/webviewWindow";
-import type {AppSettings,ProviderUsage} from "./types";
+import type {AccountCardDetail,AppSettings,CodexResetState,ProviderUsage} from "./types";
 import {FloatingRail} from "./components/FloatingRail";
 import {UsageDetailCard} from "./components/UsageDetailCard";
 import {SettingsWindow} from "./pages/SettingsWindow";
@@ -35,6 +35,8 @@ function DetailOverlay() {
   const [accountId,setAccountId]=useState<string|null>(null);
   const [settings,setSettings]=useState<AppSettings|null>(null);
   const [placement,setPlacement]=useState<"left"|"right"|"top"|"bottom">("left");
+  const [codexReset,setCodexReset]=useState<CodexResetState|null>(null);
+  const [cardDetail,setCardDetail]=useState<AccountCardDetail|null>(null);
   useEffect(()=>{
     let alive=true;const stops:(()=>void)[]=[];let settingsVersion=0,usageVersion=0;
     void(async()=>{
@@ -50,14 +52,27 @@ function DetailOverlay() {
       if(c){if(!alive){void c();return}stops.push(c)}
       const d=await listen<"left"|"right"|"top"|"bottom">("detail-placement",e=>{if(alive)setPlacement(e.payload)}).catch(()=>null);
       if(d){if(!alive){void d();return}stops.push(d)}
+      const er=await listen<CodexResetState>("codex-reset-updated",e=>{if(alive)setCodexReset(e.payload)}).catch(()=>null);
+      if(er){if(!alive){void er();return}stops.push(er)}
 
       const sv=settingsVersion,uv=usageVersion;
       void invoke<ProviderUsage[]>("get_usages").then(u=>{if(alive&&uv===usageVersion)setUsages(u)}).catch(()=>{});
       void invoke<AppSettings>("get_settings").then(x=>{if(alive&&sv===settingsVersion)setSettings(x)}).catch(()=>{});
+      void invoke<CodexResetState>("get_codex_reset_state").then(r=>{if(alive&&r)setCodexReset(r)}).catch(()=>{});
     })();
     return()=>{alive=false;stops.forEach(f=>f())};
   },[]);
-  const usage0=usages?.find(u=>u.account_id===accountId?.split("::")[0]);
+  const baseAccountId=accountId?.split("::")[0]??null;
+  const usage0=usages?.find(u=>u.account_id===baseAccountId);
+  const wantsDetailedCard=!!(baseAccountId&&settings?.providers[baseAccountId]?.detailed_card);
+  useEffect(()=>{
+    if(!baseAccountId||!wantsDetailedCard){return;}
+    let alive=true;
+    void invoke<AccountCardDetail|null>("get_account_card_detail",{accountId:baseAccountId}).then(d=>{
+      if(alive)setCardDetail(d);
+    }).catch(()=>{});
+    return()=>{alive=false;};
+  },[baseAccountId,wantsDetailedCard,usage0?.checked_at]);
   // 拆分模型组的 slot key 形如 "account::组名"：详情卡只显示该组的窗口，
   // 否则滑过 Gemini 圆环弹出的卡片会混杂 Claude/GPT 的额度（P2-06）。
   const groupId=accountId?.includes("::")?accountId.split("::")[1]:null;
@@ -97,7 +112,7 @@ function DetailOverlay() {
         if(actual)setLayout(prev=>prev?.request_id===actual.request_id?actual:prev);
       }).catch(()=>{lastHeightRef.current="";});
     }
-  },[usage,settings,layout,accountId]);
+  },[usage,settings,layout,accountId,codexReset,cardDetail]);
   // Round5c 项目一：语言走既有设置通道——settings 派生语言经 Provider 受控下发；
   // <html lang> 由 Provider 同步。
   return <I18nProvider lang={normalizeLang(settings?.language)}>
@@ -105,7 +120,7 @@ function DetailOverlay() {
     onMouseEnter={()=>void invoke("set_detail_hover",{hovered:true})}
     onMouseLeave={()=>void invoke("set_detail_hover",{hovered:false})}
     onContextMenu={e=>e.preventDefault()}>
-    {usage&&settings?<UsageDetailCard key={accountId||"none"} usage={usage} settings={settings} placement={placement} cardRef={cardRef as React.RefObject<HTMLElement>}/>:null}
+    {usage&&settings?<UsageDetailCard key={accountId||"none"} usage={usage} settings={settings} placement={placement} cardRef={cardRef as React.RefObject<HTMLElement>} codexResetState={codexReset} cardDetail={wantsDetailedCard&&cardDetail?.account_id===baseAccountId?cardDetail:null}/>:null}
   </div>
   </I18nProvider>;
 }

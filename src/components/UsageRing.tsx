@@ -6,8 +6,8 @@ import type {AppSettings,ProviderUsage} from "../types";
 import {detectEvent} from "./botEvents";
 import {useLang} from "../lib/i18n";
 
-export function UsageRing({usage,settings,onHover,refreshing,onClick,onDoubleClick,lookX=0,dataKey}:
-  {usage:ProviderUsage;settings:AppSettings;onHover:()=>void;refreshing?:boolean;onClick?:()=>void;onDoubleClick?:()=>void;lookX?:number;dataKey?:string}){
+export function UsageRing({usage,settings,onHover,refreshing,onClick,onDoubleClick,lookX=0,dataKey,codexResetStatus}:
+  {usage:ProviderUsage;settings:AppSettings;onHover:()=>void;refreshing?:boolean;onClick?:()=>void;onDoubleClick?:()=>void;lookX?:number;dataKey?:string;codexResetStatus?:"announced"|"confirmed"|null}){
   const {t,lang}=useLang();
   const [systemReduced,setSystemReduced]=useState(()=>window.matchMedia?.('(prefers-reduced-motion: reduce)').matches??false);
   useEffect(()=>{const media=window.matchMedia?.('(prefers-reduced-motion: reduce)');if(!media)return;const update=()=>setSystemReduced(media.matches);update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update)},[]);
@@ -95,6 +95,15 @@ export function UsageRing({usage,settings,onHover,refreshing,onClick,onDoubleCli
         </div>
       )}
     </div>
-    <span className="text-[11px] font-medium mt-0.5 text-[var(--text-2)]">{percentText(effectiveUsage,settings.display_mode,lang)}</span>
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium mt-0.5 text-[var(--text-2)]">
+      <span>{percentText(effectiveUsage,settings.display_mode,lang)}</span>
+      {codexResetStatus && (
+        <span
+          data-testid="codex-reset-dot"
+          aria-hidden="true"
+          className={`w-1.5 h-1.5 rounded-full shrink-0 ${codexResetStatus === "confirmed" ? "bg-[#22c55e]" : "bg-[#f97316]"}`}
+        />
+      )}
+    </span>
   </button>;
 }

@@ -1,15 +1,23 @@
 import {useEffect,useState} from "react";
-import type {AppSettings,ProviderUsage} from "../types";
+import type {AccountCardDetail,AppSettings,CodexResetState,ProviderUsage} from "../types";
 import {resetText,forecast,forecastKind,timingWindows,balanceText,balanceLabel} from "../presentation";
 import {convertBalance,formatMoney,normalizeDisplayCurrency,normalizeRate,rateEstimateNote} from "../lib/currency";
 import {HourlyUsageChart} from "./HourlyUsageChart";
+import {CodexResetSection} from "./CodexResetSection";
+import {DetailedCardSection} from "./DetailedCardSection";
+import {MetricTrendLine} from "./MetricTrendLine";
+import {formatMetricValue} from "../lib/metricsFormat";
+import {formatRelativeUpdate,formatUsdEstimateForCard} from "../lib/detailedCard";
 import {useLang} from "../lib/i18n";
-export function UsageDetailCard({usage,settings,placement,cardRef}:{usage:ProviderUsage;settings:AppSettings;placement?: "left" | "right" | "top" | "bottom";cardRef?:React.Ref<HTMLElement>}){
+export function UsageDetailCard({usage,settings,placement,cardRef,codexResetState,cardDetail}:{usage:ProviderUsage;settings:AppSettings;placement?: "left" | "right" | "top" | "bottom";cardRef?:React.Ref<HTMLElement>;codexResetState?:CodexResetState|null;cardDetail?:AccountCardDetail|null}){
   const {t,lang}=useLang();
   // 详情卡内日期的展示 locale 跟随界面语言（zh→zh-CN，en→en-US）。
   const dateLocale=lang==="en"?"en-US":"zh-CN";
   const [now,setNow]=useState(()=>Date.now());useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),10000);return()=>clearInterval(t)},[]);
-  const timed=timingWindows(usage,settings.providers[usage.account_id],lang);
+  const baseId=usage.account_id.split("::")[0];
+  const cfg=settings.providers[baseId];
+  const isDetailed=!!cfg?.detailed_card;
+  const timed=timingWindows(usage,cfg,lang);
   // Round5d 项目一：深浅主题由 data-theme 驱动语义令牌（.card-panel），卡片类不再分叉。
   const isRightOfRail = placement !== undefined ? placement === "right" : settings.dock_side === "left";
   // 侧向小箭头只在卡片位于 rail 左/右侧时有意义；正下/正上时朝向用 dock_side 兜底。
@@ -29,7 +37,17 @@ export function UsageDetailCard({usage,settings,placement,cardRef}:{usage:Provid
         }`}
       />
     )}
-    <strong className="text-sm">{usage.display_name}</strong><p className="text-[var(--text-3)]">{usage.plan_name}</p>
+    <div className="flex items-baseline justify-between gap-2">
+      <strong className="text-sm truncate">{usage.display_name}</strong>
+      {isDetailed && usage.plan_name && (
+        <span className="text-[11px] text-[var(--text-3)] shrink-0">{usage.plan_name}</span>
+      )}
+    </div>
+    {!isDetailed && usage.plan_name && <p className="text-[var(--text-3)]">{usage.plan_name}</p>}
+    {isDetailed && (() => {
+      const rel = formatRelativeUpdate(usage.checked_at, now, lang);
+      return rel ? <p className="text-[11px] text-[var(--text-3)] mt-0.5">{rel}</p> : null;
+    })()}
     {/* Round4 项目一：实时速率行仅在账号处于工作状态时显示；None/缺省 = 渠道日志无
         usage 字段或速率不足 1，显示「—」，不编造。值为后端取整后的 tok/min。 */}
     {usage.is_active&&(
@@ -64,6 +82,17 @@ export function UsageDetailCard({usage,settings,placement,cardRef}:{usage:Provid
           </div>
           <p className="text-[var(--text-3)]">{resetText(w.resets_at,now,lang)}</p>
           <p className="text-[var(--text-3)]">{timed.find(t=>t.id===w.id)?.period_note}</p>
+          {isDetailed && cardDetail?.window_estimates[w.id] && (() => {
+            const est = cardDetail.window_estimates[w.id];
+            const fullStr = formatUsdEstimateForCard(est.full_usd, settings.display_currency, settings.usd_cny_rate);
+            const usedStr = formatUsdEstimateForCard(est.used_usd, settings.display_currency, settings.usd_cny_rate);
+            const star = est.unpriced_tokens > 0 ? "*" : "";
+            return (
+              <p className="text-[11px] text-[var(--text-2)] font-mono mt-0.5">
+                {t("detail_card.est_value", { full: `${fullStr}${star}`, used: `${usedStr}${star}` })}
+              </p>
+            );
+          })()}
           {settings.forecast&&usage.state==="live"&&(()=>{
             const kind=forecastKind(w,now);
             // 预警文案四档：耗尽/正常/临近/远期；黄档并入 warn 令牌（红→橙→黄阶梯）。
@@ -94,7 +123,63 @@ export function UsageDetailCard({usage,settings,placement,cardRef}:{usage:Provid
     {usage.hourly_usages && usage.hourly_usages.length > 0 && (
       <HourlyUsageChart usages={usage.hourly_usages} compact={true} />
     )}
+    {usage.metrics && usage.metrics.length > 0 && (() => {
+      let trendShown = 0;
+      return (
+        <div className="mt-3 pt-2 border-t border-[var(--border)] space-y-2">
+          {usage.metrics.slice(0, 4).map(m => {
+            const hasTrend = (m.history?.length ?? 0) >= 2;
+            const showTrend = hasTrend && trendShown < 2;
+            if (showTrend) trendShown += 1;
+            return (
+              <div key={m.id} className="space-y-1">
+                <div className="flex justify-between items-center gap-2 text-xs">
+                  <span className="text-[var(--text-2)] truncate">{m.label}</span>
+                  <b className="font-mono text-[var(--text-1)] shrink-0">{formatMetricValue(m.value, m.unit)}</b>
+                </div>
+                {showTrend && <MetricTrendLine history={m.history} unit={m.unit} height={30} />}
+              </div>
+            );
+          })}
+        </div>
+      );
+    })()}
+    {usage.provider_id === "codex" && settings.providers[usage.account_id]?.show_codex_reset_credits && usage.codex_reset_credits && (
+      <div className="mt-3 pt-2 border-t border-[var(--border)] space-y-0.5">
+        <div className="flex justify-between items-center text-xs">
+          <span className="text-[var(--text-2)]">{t("codex_credits.card_label")}</span>
+          <b className="font-mono text-[var(--text-1)]">
+            {usage.codex_reset_credits.status === "available" && usage.codex_reset_credits.count != null
+              ? t("codex_credits.available", { count: usage.codex_reset_credits.count })
+              : usage.codex_reset_credits.status === "codex_missing"
+              ? t("codex_credits.codex_missing")
+              : t("codex_credits.unreported")}
+          </b>
+        </div>
+        {usage.codex_reset_credits.status === "available" &&
+          (usage.codex_reset_credits.count ?? 0) > 0 &&
+          usage.codex_reset_credits.next_expiry && (
+            <p className="text-[11px] text-[var(--text-3)]">
+              {t("codex_credits.next_expiry", {
+                time: new Date(usage.codex_reset_credits.next_expiry).toLocaleString(dateLocale, {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+              })}
+            </p>
+          )}
+      </div>
+    )}
     {!usage.windows.length&&!usage.balances.length&&!usage.error_message&&<p>{t("rail.detail.no_readings")}</p>}
+    {isDetailed && cardDetail && (
+      <DetailedCardSection detail={cardDetail} settings={settings} nowMs={now} />
+    )}
+    {usage.provider_id === "codex" && (settings.show_codex_reset_announcements ?? true) && codexResetState?.event && (
+      <CodexResetSection resetState={codexResetState} accountId={usage.account_id} nowMs={now} />
+    )}
     <p className="mt-3 text-[10px] text-[var(--text-3)]">{usage.source||t("rail.detail.source_fallback")}{usage.last_success_at&&` · ${t("rail.detail.last_success",{time:new Date(usage.last_success_at).toLocaleString()})}`}</p>
   </section>;
 }

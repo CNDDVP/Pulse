@@ -2,6 +2,24 @@
 
 所有针对 Pulse for Windows 的重要版本更新都将记录在此文件中。
 
+## [0.8.0] - 2026-10-29
+
+### 新增：对齐上游 v1.12.4 与 Pulse-codex-reset 的四大核心能力批次
+
+- **Codex 公开重置卡预告与确认（移植自 `guanbear/Pulse-codex-reset`）**：
+  - 后台 15 分钟定检 `https://aihot.news/api/v1/codex-resets`（支持 `ETag`/`304` 缓存与 `429 Retry-After` 退避，失败保留快照绝不阻塞官方额度）。
+  - Codex 圆环百分比旁新增橙色（已预告）与绿色（已确认）信号圆点，详情卡内嵌重置消息区（中英文智能摘录、本地预计时间窗口、AI Hot News 与 X 原帖双链接）。
+  - **本账号额度回升交叉验证（`CodexResetObservation`）**：自动比对同一账号指纹（进程内 SHA-256）30 分钟内两次实时读数，当原窗口未到期而可用额度回升 ≥1% 时提示「本账号额度已回升 · 全局重置待确认」。
+- **Codex 官方重置券读取与「较弱模型迹象」被动检测**：
+  - **额度重置券（Limit Reset Credits）**：通过一次性有界 `codex app-server` JSON-RPC 探针（15 秒硬超时后立即回收子进程，自动探测 PATH、npm、nvm、Windows Store 包与 ChatGPT/Codex 桌面应用内置二进制）读取官方重置券数量与最近到期时间。
+  - **较弱模型迹象（`CodexSignals`）**：纯本地只读扫描 `~/.codex/sessions` 与 `archived_sessions`（支持 30 天 / 90 天 / 全部会话，带文件级 `(size, mtime)` 内存缓存与分叉会话 2 秒重放过滤），客观统计 `518n−2`（≥516）推理晶格截断比例与 Codex 0.144+ 会话中途模型/推理强度被静默调低的记录。
+- **账号级「详细卡片（Detailed Card）」与「日/周/月/年总结分享卡片（Recap）」**：
+  - **详细卡片**：开启后在悬停卡片展示套餐、相对更新时间、每条限额折合的公开 API 估算价值（≥5% 用量且 ≥$0.20 守卫）、今日/7天/31天 Token 与费用汇总、31 天胶囊柱状图、主力模型、缓存命中率，以及 Claude Code（5m/1h 档）与 Codex（GPT-5.6+ 30m 保底）的 **Prompt 缓存存活倒计时**。
+  - **日/周/月/年用量报告卡片（Recap Deck）**：完整复刻上游 8 类 `1080 × 1920` 浅色印刷风视觉卡片（总览海报 Poster、AI 工具阵容 Opener、月历 Calendar、全年日历 Year Calendar、十二个月 Months、24h 作息时刻表 Timetable、订阅回本倍数 Payback、总结计分卡 Scorecard），支持一键保存单张/整套高清 PNG、复制到剪贴板，以及**「隐藏项目名称」隐私打码开关**。
+- **免 Fork 自定义脚本扩展系统（Extensions）与三种余额圆环模式**：
+  - 支持在 `<data_dir>/extensions/<folder>/pulse-extension.json` 放入 `.ps1` / `.js` / `.py` / `.bat` / `.exe` 脚本，经目录越界守卫、净化环境变量沙箱、256KB 输出上限与 1~60 秒超时保护执行，自动上报额度窗口、余额及最多 4 项自定义指标与 120 点历史趋势折线（卡片 30px 紧凑趋势线 + 设置页 64px 交互式趋势图），支持一键生成示例扩展。
+  - 新增纯余额服务的三种圆环百分比计算方式：**自上次充值（`since_top_up` 峰值追踪）**、**只看余额（`balance_only`）**、**我的预算（`budget`）**。
+
 ## [0.6.1] - 2026-09-21
 
 ### 修复

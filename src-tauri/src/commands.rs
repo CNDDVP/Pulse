@@ -342,6 +342,14 @@ pub async fn update_settings(mut new_settings:AppSettings,state:State<'_,AppStat
             .map(|(id, _)| id.clone())
             .collect()
     };
+    let codex_reset_changed = crate::codex_reset::wants_codex_reset_announcements(&new_settings)
+        != crate::codex_reset::wants_codex_reset_announcements(&old);
+    if codex_reset_changed || proxy_changed {
+        let app_clone = app.clone();
+        tauri::async_runtime::spawn(async move {
+            crate::refresh_codex_reset_and_emit(&app_clone, true).await;
+        });
+    }
     if !to_refresh_ids.is_empty() {
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
@@ -1192,6 +1200,202 @@ pub async fn import_installed_config(state: State<'_, AppState>, app: AppHandle,
         let _ = crate::refresh_usages_and_emit(&app_clone, true).await;
     });
     Ok(imported)
+}
+
+#[tauri::command]
+pub async fn get_codex_reset_state(state: State<'_, AppState>) -> Result<crate::codex_reset::CodexResetState, String> {
+    let settings = state.settings.lock().await.clone();
+    let enabled = crate::codex_reset::wants_codex_reset_announcements(&settings);
+    Ok(state.codex_reset.snapshot_state(enabled, chrono::Utc::now()))
+}
+
+#[tauri::command]
+pub async fn get_codex_signals(span_days: Option<u32>, state: State<'_, AppState>) -> Result<crate::codex_signals::CodexSignalsReport, String> {
+    if crate::updater::applying() {
+        return Err("正在退出升级，请稍后操作".into());
+    }
+    let extra = {
+        let s = state.settings.lock().await;
+        s.token_spend_extra_paths
+            .get("codex")
+            .cloned()
+            .unwrap_or_default()
+    };
+    tauri::async_runtime::spawn_blocking(move || crate::codex_signals::scan_codex_signals(span_days, &extra))
+        .await
+        .map_err(|_| "Codex 信号分析任务失败".to_string())
+}
+
+#[tauri::command]
+pub async fn fetch_codex_reset_credits(state: State<'_, AppState>) -> Result<crate::types::CodexResetCredits, String> {
+    if crate::updater::applying() {
+        return Err("正在退出升级，请稍后操作".into());
+    }
+    let proxy = state.settings.lock().await.network_proxy.clone();
+    Ok(crate::providers::codex_app_server::fetch_reset_credits(&proxy).await)
+}
+
+#[tauri::command]
+pub async fn get_account_card_detail(account_id: String, state: State<'_, AppState>) -> Result<Option<crate::card_detail::AccountCardDetail>, String> {
+    if crate::updater::applying() {
+        return Err("正在退出升级，请稍后操作".into());
+    }
+    let base_id = account_id.split("::").next().unwrap_or(&account_id).to_string();
+    let token_spend_enabled = state.settings.lock().await.token_spend_enabled;
+    let usage = {
+        let cached = state.cached_usages.lock().await;
+        cached.iter().find(|u| u.account_id == base_id).cloned()
+    };
+    let Some(usage) = usage else {
+        return Ok(None);
+    };
+    let detail = tauri::async_runtime::spawn_blocking(move || {
+        crate::card_detail::get_account_card_detail(&usage, token_spend_enabled)
+    })
+    .await
+    .map_err(|_| "详细卡片计算失败".to_string())?;
+    Ok(Some(detail))
+}
+
+#[tauri::command]
+pub async fn list_recap_periods(kind: String, state: State<'_, AppState>) -> Result<Vec<crate::recap::RecapPeriodInfo>, String> {
+    if crate::updater::applying() {
+        return Err("正在退出升级，请稍后操作".into());
+    }
+    if !state.settings.lock().await.token_spend_enabled {
+        return Err("Token 消耗统计未启用；请在常规设置中开启".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || crate::recap::list_recap_periods(&kind))
+        .await
+        .map_err(|_| "周期列表读取失败".to_string())?
+}
+
+#[tauri::command]
+pub async fn build_recap(kind: String, key: Option<String>, state: State<'_, AppState>) -> Result<crate::recap::RecapReport, String> {
+    if crate::updater::applying() {
+        return Err("正在退出升级，请稍后操作".into());
+    }
+    if !state.settings.lock().await.token_spend_enabled {
+        return Err("Token 消耗统计未启用；请在常规设置中开启".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || crate::recap::build_recap(&kind, key.as_deref()))
+        .await
+        .map_err(|_| "生成用量报告失败".to_string())?
+}
+
+#[tauri::command]
+pub fn save_recap_png(filename: String, png_base64: String) -> Result<String, String> {
+    use base64::Engine as _;
+    let safe_base: String = filename
+        .trim_end_matches(".png")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_' || *c == '.')
+        .take(120)
+        .collect();
+    let base = if safe_base.is_empty() {
+        "pulse-recap"
+    } else {
+        &safe_base
+    };
+    let raw_b64 = png_base64
+        .strip_prefix("data:image/png;base64,")
+        .unwrap_or(&png_base64);
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(raw_b64.trim())
+        .map_err(|_| "PNG 数据解码失败")?;
+    let dir = crate::config::get_config_dir().join("exports");
+    std::fs::create_dir_all(&dir).map_err(|_| "无法创建导出目录")?;
+    let path = unique_export_path(&dir, base, "png");
+    std::fs::write(&path, bytes).map_err(|e| format!("保存图片失败：{e}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn scan_extensions(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Vec<crate::extensions::ExtensionEntry>, String> {
+    if crate::updater::applying() {
+        return Err("正在退出升级，请稍后操作".into());
+    }
+    let root = crate::extensions::extensions_root_dir();
+    let _ = std::fs::create_dir_all(&root);
+    let _io = state.settings_io.lock().await;
+    let mut settings = state.settings.lock().await.clone();
+    let entries = crate::extensions::scan_extensions_in_dir(&root, &settings.providers);
+
+    let mut mutated = false;
+    if !entries.is_empty()
+        && settings.monitoring_setup_completed
+        && !settings.authorized_providers.iter().any(|p| p == "extension")
+    {
+        settings.authorized_providers.push("extension".into());
+        mutated = true;
+    }
+
+    for entry in &entries {
+        if entry.status == "ready"
+            && !entry.account_id.is_empty()
+            && !settings.providers.contains_key(&entry.account_id)
+            && settings.providers.len() < 64
+        {
+            let next_order = settings
+                .providers
+                .values()
+                .map(|c| c.order)
+                .max()
+                .map_or(0, |m| m + 1);
+            settings.providers.insert(
+                entry.account_id.clone(),
+                crate::types::ProviderConfig {
+                    provider_id: "extension".into(),
+                    label: entry.name.clone(),
+                    enabled: false,
+                    order: next_order,
+                    use_local: true,
+                    extension_id: Some(entry.id.clone()),
+                    ..Default::default()
+                },
+            );
+            mutated = true;
+        }
+    }
+
+    if mutated {
+        let saved = tauri::async_runtime::spawn_blocking(move || {
+            crate::config::save_settings(&settings)?;
+            Ok::<_, String>(settings)
+        })
+        .await
+        .map_err(|_| "扩展设置同步失败")??;
+        *state.settings.lock().await = saved.clone();
+        let _ = app.emit("settings-updated", &saved);
+    }
+
+    Ok(entries)
+}
+
+#[tauri::command]
+pub fn open_extensions_dir() -> Result<String, String> {
+    let dir = crate::extensions::extensions_root_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建扩展目录: {e}"))?;
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("explorer.exe")
+            .arg(&dir)
+            .spawn();
+    }
+    Ok(dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn create_sample_extension(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Vec<crate::extensions::ExtensionEntry>, String> {
+    let root = crate::extensions::extensions_root_dir();
+    crate::extensions::create_sample_extension_in(&root)?;
+    scan_extensions(state, app).await
 }
 
 #[cfg(test)]

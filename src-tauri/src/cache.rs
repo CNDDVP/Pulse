@@ -23,6 +23,9 @@ pub fn reconcile_with_pin(mut fresh:ProviderUsage,previous:Option<&ProviderUsage
     if fresh.tok_per_min.is_none(){
         if let Some(old)=previous.filter(|o|o.account_id==fresh.account_id){fresh.tok_per_min=old.tok_per_min;}
     }
+    if fresh.codex_reset_credits.is_none(){
+        if let Some(old)=previous.filter(|o|o.account_id==fresh.account_id){fresh.codex_reset_credits=old.codex_reset_credits.clone();}
+    }
     if fresh.state=="live" {apply_primary_window(&mut fresh,pin);return fresh}
     // Never hide an authentication change or an unsupported route behind a cached account.
     let is_local_service = fresh.error_code.as_deref() == Some("local_service");
@@ -34,6 +37,7 @@ pub fn reconcile_with_pin(mut fresh:ProviderUsage,previous:Option<&ProviderUsage
             if !windows.is_empty() || !old.balances.is_empty(){
                 fresh.state="stale".into();fresh.source=old.source.clone();fresh.last_success_at=old.last_success_at.clone();
                 fresh.windows=windows;fresh.balances=old.balances.clone();fresh.plan_name=old.plan_name.clone();
+                fresh.metrics=old.metrics.clone();
                 fresh.scope=old.scope.clone();
                 apply_primary_window(&mut fresh,pin);
             }

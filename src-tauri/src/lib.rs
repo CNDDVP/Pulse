@@ -17,6 +17,11 @@ pub mod rail_state;
 pub mod provider_status;
 pub mod discord_presence;
 pub mod sync_hub;
+pub mod codex_reset;
+pub mod codex_signals;
+pub mod card_detail;
+pub mod recap;
+pub mod extensions;
 use std::{collections::HashMap,time::{Duration,Instant},sync::atomic::{AtomicBool,AtomicU64,Ordering},sync::Arc};
 use tauri::{AppHandle,Emitter,Manager};
 use tokio::sync::{Mutex,Semaphore};
@@ -47,6 +52,7 @@ pub struct AppState {
     pub drag_ratio:std::sync::Mutex<(f64,f64)>,
     pub drag_monitors:std::sync::Mutex<Vec<tauri::Monitor>>,
     pub close_coordinator:Arc<settings_close::SettingsCloseCoordinator>,
+    pub codex_reset:Arc<codex_reset::CodexResetService>,
 }
 impl AppState {
     pub fn config_error(&self)->Option<String>{self.configuration_error.lock().ok().and_then(|g|g.clone())}
@@ -132,6 +138,9 @@ impl AppState {
                         r
                     });
                     let _=apply_single_reading(&app2,&aid,r,Some(generation)).await;
+                    if cfg_clone.provider_id == "codex" {
+                        crate::refresh_codex_reset_and_emit(&app2, true).await;
+                    }
                 }
                 let _=app2.emit("refresh-state",serde_json::json!({"account_id":aid,"request_id":request_id,"phase":"finished","ok":ok,"kind":kind}));
             });
@@ -246,6 +255,22 @@ pub fn open_settings_window(app:&AppHandle){
 /// 一次全量刷新的结果：读数快照 + 实际发起/被冷却跳过的账号数（A07，反馈用）。
 #[derive(serde::Serialize,Clone)]
 pub struct RefreshSummary{pub readings:Vec<ProviderUsage>,pub initiated:usize,pub skipped:usize}
+
+pub async fn refresh_codex_reset_and_emit(app:&AppHandle,force:bool){
+    if updater::applying(){return}
+    let state=app.state::<AppState>();
+    let settings=state.settings.lock().await.clone();
+    let wants=codex_reset::wants_codex_reset_announcements(&settings);
+    if !wants{
+        state.codex_reset.clear();
+        let _=app.emit("codex-reset-updated",&codex_reset::CodexResetState::default());
+        return;
+    }
+    let http=state.http.read().await.clone();
+    let snap=state.codex_reset.refresh(&http,force,chrono::Utc::now()).await;
+    let _=app.emit("codex-reset-updated",&snap);
+}
+
 pub async fn refresh_usages_and_emit(app:&AppHandle,manual:bool)->Result<RefreshSummary,String>{
     if updater::applying(){return Err("正在退出升级".into())}
     let state=app.state::<AppState>();
@@ -305,6 +330,12 @@ pub async fn refresh_usages_and_emit(app:&AppHandle,manual:bool)->Result<Refresh
 
     let start_gens=state.account_generations.lock().await.clone();
     let http=state.http.read().await.clone();
+    if codex_reset::wants_codex_reset_announcements(&settings) {
+        let app_reset = app.clone();
+        tauri::async_runtime::spawn(async move {
+            refresh_codex_reset_and_emit(&app_reset, manual).await;
+        });
+    }
     let mut rx=providers::fetch_all_stream(&due,&http,state.refresh_slots.clone(),Some(app.clone()));
     let mut incoming=vec![];
     let mut passed:Vec<ProviderUsage>=vec![];
@@ -346,6 +377,12 @@ pub async fn refresh_usages_and_emit(app:&AppHandle,manual:bool)->Result<Refresh
             }
         }
         passed.push(fresh.clone());
+        if fresh.provider_id == "codex" && codex_reset::wants_codex_reset_announcements(&current_settings) {
+            let now_utc = chrono::Utc::now();
+            state.codex_reset.observe_reading(&fresh, now_utc);
+            let snap = state.codex_reset.snapshot_state(true, now_utc);
+            let _ = app.emit("codex-reset-updated", &snap);
+        }
 
         let mut cached=state.cached_usages.lock().await;
         let mut schedule=state.schedule.lock().await;
@@ -443,6 +480,12 @@ pub async fn apply_single_reading(app:&AppHandle,account_id:&str,fresh:ProviderU
     if let Some(g)=expected_gen{
         let cur=state.account_generations.lock().await.get(account_id).copied().unwrap_or(0);
         if cur!=g{return Ok(())}
+    }
+    if fresh.provider_id == "codex" && codex_reset::wants_codex_reset_announcements(&current_settings) {
+        let now_utc = chrono::Utc::now();
+        state.codex_reset.observe_reading(&fresh, now_utc);
+        let snap = state.codex_reset.snapshot_state(true, now_utc);
+        let _ = app.emit("codex-reset-updated", &snap);
     }
     let mut schedule=state.schedule.lock().await;
     let previous=cached.iter().find(|u|u.account_id==account_id);
@@ -669,7 +712,7 @@ pub fn run(){
     let (settings,error)=match config::load_settings(){Ok(s)=>(s,None),Err(e)=>(AppSettings::default(),Some(e))};
     let http=tokio::sync::RwLock::new(providers::client_with_proxy(&settings.network_proxy).expect("HTTP client initialization failed"));
     let settings_start_hidden=settings.start_behavior=="tray";
-    let state=AppState{settings:Mutex::new(settings),cached_usages:Mutex::new(vec![]),refresh_gate:Mutex::new(()),schedule:Mutex::new(HashMap::new()),configuration_error:std::sync::Mutex::new(error),http,window_mode:Mutex::new("rail".into()),user_hidden:AtomicBool::new(settings_start_hidden),last_cursor_over:std::sync::Mutex::new(Instant::now()),rail_pin_until:std::sync::Mutex::new(None),ledger_gate:Mutex::new(()),ledger_scan_id:Arc::new(AtomicU64::new(0)),alerts:Mutex::new(alerts::load(&config::get_config_dir().join("alerts.json"))),detail_account:std::sync::Mutex::new(None),settings_io:tokio::sync::Mutex::new(()),account_generations:Mutex::new(HashMap::new()),refresh_slots:Arc::new(Semaphore::new(4)),inflight:Mutex::new(HashMap::new()),request_counter:AtomicU64::new(0),activity:std::sync::Mutex::new(HashMap::new()),activity_watcher:std::sync::Mutex::new(activity::Watcher::new(activity::Watcher::system_roots())),app_handle:std::sync::OnceLock::new(),dragging:AtomicBool::new(false),drag_grab:std::sync::Mutex::new((0.0,0.0)),drag_side:std::sync::Mutex::new("free".into()),drag_ratio:std::sync::Mutex::new((0.5,0.5)),drag_monitors:std::sync::Mutex::new(Vec::new()),close_coordinator:Arc::new(settings_close::SettingsCloseCoordinator::default())};
+    let state=AppState{settings:Mutex::new(settings),cached_usages:Mutex::new(vec![]),refresh_gate:Mutex::new(()),schedule:Mutex::new(HashMap::new()),configuration_error:std::sync::Mutex::new(error),http,window_mode:Mutex::new("rail".into()),user_hidden:AtomicBool::new(settings_start_hidden),last_cursor_over:std::sync::Mutex::new(Instant::now()),rail_pin_until:std::sync::Mutex::new(None),ledger_gate:Mutex::new(()),ledger_scan_id:Arc::new(AtomicU64::new(0)),alerts:Mutex::new(alerts::load(&config::get_config_dir().join("alerts.json"))),detail_account:std::sync::Mutex::new(None),settings_io:tokio::sync::Mutex::new(()),account_generations:Mutex::new(HashMap::new()),refresh_slots:Arc::new(Semaphore::new(4)),inflight:Mutex::new(HashMap::new()),request_counter:AtomicU64::new(0),activity:std::sync::Mutex::new(HashMap::new()),activity_watcher:std::sync::Mutex::new(activity::Watcher::new(activity::Watcher::system_roots())),app_handle:std::sync::OnceLock::new(),dragging:AtomicBool::new(false),drag_grab:std::sync::Mutex::new((0.0,0.0)),drag_side:std::sync::Mutex::new("free".into()),drag_ratio:std::sync::Mutex::new((0.5,0.5)),drag_monitors:std::sync::Mutex::new(Vec::new()),close_coordinator:Arc::new(settings_close::SettingsCloseCoordinator::default()),codex_reset:Arc::new(codex_reset::CodexResetService::new())};
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -857,6 +900,6 @@ pub fn run(){
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![updater::update_status,updater::update_ui_ready,updater::update_check,updater::update_download,updater::update_cancel,updater::update_discard,updater::update_preferences,updater::update_apply,commands::publish_rail_warning,commands::get_settings,commands::update_settings,commands::get_usages,commands::refresh_usages,commands::refresh_account,commands::drag_begin,commands::drag_move,commands::drag_end,commands::drag_cancel,commands::rail_menu_cmd,commands::set_window_state,commands::open_settings,commands::close_settings_window,commands::settings_window_ready,commands::request_close_settings,commands::acknowledge_close,commands::pending_settings_close,commands::confirm_close_settings,commands::set_credential,commands::delete_credential,commands::delete_account,commands::diagnostics,commands::test_account,commands::token_spend,commands::cancel_token_spend,commands::export_ledger,commands::trend_metrics,commands::export_trend,commands::token_spend_sessions,commands::token_spend_session_detail,commands::get_subscriptions,commands::save_subscriptions,commands::get_token_spend_extra_paths,commands::save_token_spend_extra_paths,commands::scan_path_kind,commands::monitors,commands::startup_enabled,commands::set_startup,commands::notification_status,commands::get_notification_status,commands::register_notification_identity,commands::unregister_notification_identity,commands::test_notification,commands::begin_free_drag,commands::commit_free_position,commands::show_detail,commands::get_detail_layout,commands::detail_layout_ready,commands::resize_detail,commands::hide_detail,commands::detail_account,commands::set_detail_hover,commands::is_portable,commands::get_profile_info,commands::check_profile_status,commands::clear_profile_credentials,commands::create_isolated_profile,commands::get_runtime_info,commands::check_importable_config,commands::import_installed_config,commands::detect_network_proxy,commands::test_network_connection,commands::check_local_antigravity,commands::quick_add_antigravity_account,commands::open_external_url,commands::open_stepfun_login,commands::fetch_provider_status,commands::sync_hub_status,commands::sync_hub_reset_secret,commands::sync_set_connect_secret,commands::sync_lan_urls,commands::sync_devices_snapshot])
+        .invoke_handler(tauri::generate_handler![updater::update_status,updater::update_ui_ready,updater::update_check,updater::update_download,updater::update_cancel,updater::update_discard,updater::update_preferences,updater::update_apply,commands::publish_rail_warning,commands::get_settings,commands::update_settings,commands::get_usages,commands::refresh_usages,commands::refresh_account,commands::drag_begin,commands::drag_move,commands::drag_end,commands::drag_cancel,commands::rail_menu_cmd,commands::set_window_state,commands::open_settings,commands::close_settings_window,commands::settings_window_ready,commands::request_close_settings,commands::acknowledge_close,commands::pending_settings_close,commands::confirm_close_settings,commands::set_credential,commands::delete_credential,commands::delete_account,commands::diagnostics,commands::test_account,commands::token_spend,commands::cancel_token_spend,commands::export_ledger,commands::trend_metrics,commands::export_trend,commands::token_spend_sessions,commands::token_spend_session_detail,commands::get_subscriptions,commands::save_subscriptions,commands::get_token_spend_extra_paths,commands::save_token_spend_extra_paths,commands::scan_path_kind,commands::monitors,commands::startup_enabled,commands::set_startup,commands::notification_status,commands::get_notification_status,commands::register_notification_identity,commands::unregister_notification_identity,commands::test_notification,commands::begin_free_drag,commands::commit_free_position,commands::show_detail,commands::get_detail_layout,commands::detail_layout_ready,commands::resize_detail,commands::hide_detail,commands::detail_account,commands::set_detail_hover,commands::is_portable,commands::get_profile_info,commands::check_profile_status,commands::clear_profile_credentials,commands::create_isolated_profile,commands::get_runtime_info,commands::check_importable_config,commands::import_installed_config,commands::detect_network_proxy,commands::test_network_connection,commands::check_local_antigravity,commands::quick_add_antigravity_account,commands::open_external_url,commands::open_stepfun_login,commands::fetch_provider_status,commands::sync_hub_status,commands::sync_hub_reset_secret,commands::sync_set_connect_secret,commands::sync_lan_urls,commands::sync_devices_snapshot,commands::get_codex_reset_state,commands::get_codex_signals,commands::fetch_codex_reset_credits,commands::get_account_card_detail,commands::list_recap_periods,commands::build_recap,commands::save_recap_png,commands::scan_extensions,commands::open_extensions_dir,commands::create_sample_extension])
         .run(tauri::generate_context!()).expect("Pulse runtime failed");
 }

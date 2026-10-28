@@ -6,6 +6,7 @@ pub mod command_code;
 pub mod devin;
 pub mod ollama;
 pub mod xiaomi;
+pub mod codex_app_server;
 pub(crate) mod stepfun;
 
 use crate::{secrets::{SecretStore,WindowsSecrets},types::{AppSettings,ProviderConfig,ProviderUsage}};
@@ -16,7 +17,7 @@ use serde_json::Value;
 pub const IMPLEMENTED:&[&str]=&[
     "claude","codex","antigravity","cursor","copilot","grok","grok-bot",
     "opencode","kimi","zai","zhipu","minimax","minimax-cn","deepseek",
-    "volcengine","command-code","devin","ollama","xiaomi","stepfun"
+    "volcengine","command-code","devin","ollama","xiaomi","stepfun","extension"
 ];
 
 pub fn is_network_error(code: &str) -> bool {
@@ -227,6 +228,7 @@ const LOCAL_SCOPE:&str="local-rpc";
 async fn fetch_inner(account:&str,cfg:&ProviderConfig,http:&reqwest::Client)->ProviderUsage{
     let id=cfg.provider_id.as_str();
     if !IMPLEMENTED.contains(&id){return ProviderUsage::problem(id,"unsupported","此 Provider 尚未完成 Windows 数据路线，不能报告额度")}
+    if id=="extension"{return crate::extensions::fetch_extension(account,cfg,&crate::types::NetworkProxySettings::default()).await;}
     if id=="antigravity"{let mut r=antigravity::fetch().await;if r.scope.is_empty(){r.scope=LOCAL_SCOPE.into();}return r}
     let credential=match resolve_credential(account,cfg).await{Ok(c)=>c,Err(r)=>return r};
 
@@ -310,8 +312,13 @@ async fn fetch_inner(account:&str,cfg:&ProviderConfig,http:&reqwest::Client)->Pr
         request=request.header("Cookie",cookie).header("Origin","https://cursor.com");
     }else if id=="copilot"{request=request.header("Authorization",format!("token {}",credential.token)).header("Editor-Version","vscode/1.96.2").header("Editor-Plugin-Version","copilot-chat/0.26.7").header("X-Github-Api-Version","2025-04-01");}
     else{request=request.bearer_auth(&credential.token);}
+    let codex_fp = if id == "codex" {
+        credential.account.as_deref().filter(|s| !s.is_empty()).map(scope_of)
+    } else {
+        None
+    };
     if id=="claude"{request=request.header("anthropic-beta","oauth-2025-04-20");}
-    if id=="codex"{if let Some(account)=credential.account{request=request.header("ChatGPT-Account-Id",account);}}
+    if id=="codex"{if let Some(ref account)=credential.account{request=request.header("ChatGPT-Account-Id",account.as_str());}}
     if id=="grok"{request=request.header("x-xai-token-auth","xai-grok-cli");}
     let mut answer=response(id,request.header("Accept","application/json")).await;
     if ["minimax","minimax-cn"].contains(&id) && answer.as_ref().err().and_then(|r|r.error_code.as_deref())==Some("not_found"){
@@ -319,6 +326,14 @@ async fn fetch_inner(account:&str,cfg:&ProviderConfig,http:&reqwest::Client)->Pr
     }
     let mut r=match answer {Ok(v)=>parsers::parse(id,&v,chrono::Utc::now().timestamp()),Err(r)=>r};
     r.scope=scope_of(&credential.token);
+    r.codex_account_fingerprint = codex_fp;
+    if id == "codex" && cfg.show_codex_reset_credits && cfg.use_local && !cfg.credential_configured {
+        let credits = codex_app_server::fetch_reset_credits(& crate::types::NetworkProxySettings::default()).await;
+        r.codex_reset_credits = Some(credits);
+    }
+    if cfg.balance_basis.is_some() {
+        crate::extensions::apply_balance_ring_basis(&mut r, account, cfg);
+    }
     r.source=if cfg.use_local && !cfg.credential_configured{"本地工具登录 → 服务接口"}else{"已保存凭据 → 服务接口"}.into();
     r
 }

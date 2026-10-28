@@ -33,7 +33,7 @@
 
 采用 **Tauri 2 + Rust + React 19 + Win32 原生调用** 架构，针对 Windows 11/10 进行了深度适配与架构加固。
 
-> **v0.6.6 亮点**：StepFun 网页会话链路 36 项复审闭环——自动续期死锁修复、多账号扫码隔离、用量明细分页与去重。完整变更见 [Release Notes](https://github.com/CNDDVP/Pulse/releases/tag/v0.6.6) 与 [CHANGELOG](CHANGELOG.md)。
+> **v0.8.0 亮点**：新增 Codex 公开重置卡预告与确认圆点/卡片、Codex 官方重置券读取与「较弱模型迹象」被动检测、账号级「详细卡片（含额度价值估算、31天图表与 Prompt 缓存倒计时）」、日/周/月/年 8 张 1080×1920 印刷风总结分享卡片（Recap），以及免 Fork 的自定义脚本扩展系统（支持 `.ps1`/`.js`/`.py`/`.bat`/`.exe`、三种余额圆环算法与自定义指标趋势线）。完整变更见 [CHANGELOG](CHANGELOG.md)。
 
 ---
 

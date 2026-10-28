@@ -26,7 +26,40 @@ pub const PROVIDERS: &[(&str, &str)] = &[
     ("command-code", "Command Code"), ("deepseek", "DeepSeek"), ("devin", "Devin"),
     ("xiaomi", "小米 Coding Plan"), ("stepfun", "StepFun"),
 ];
-pub fn name(id: &str) -> String { PROVIDERS.iter().find(|p| p.0 == id).map(|p| p.1).unwrap_or(id).into() }
+pub fn name(id: &str) -> String {
+    if id == "extension" {
+        return "自定义扩展".into();
+    }
+    PROVIDERS.iter().find(|p| p.0 == id).map(|p| p.1).unwrap_or(id).into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodexResetCredits {
+    /// "available" | "unreported" | "codex_missing"
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_expiry: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UsageMetricPoint {
+    pub t: String,
+    pub v: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UsageMetric {
+    pub id: String,
+    pub label: String,
+    pub value: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<UsageMetricPoint>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UsageWindow {
     pub id: String, pub name: String, pub used_fraction: f64, pub used_percent: f64,
@@ -73,6 +106,15 @@ pub struct ProviderUsage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tok_per_min: Option<f64>,
     #[serde(default)] pub web_auth_required: bool,
+    /// Process-local SHA-256 fingerprint of Codex account_id (never written to cache or JSON).
+    #[serde(skip)]
+    pub codex_account_fingerprint: Option<String>,
+    /// Official Codex rate-limit reset credits from `codex app-server`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_reset_credits: Option<CodexResetCredits>,
+    /// Custom metrics reported by user extensions (max 4, with up to 120 history points).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<Vec<UsageMetric>>,
 }
 impl ProviderUsage {
     pub fn problem(provider: &str, code: &str, message: &str) -> Self {
@@ -105,6 +147,16 @@ pub struct ProviderConfig {
     pub split_model_groups: bool,
     /// Per-account money line for the low-balance notice, in `low_balance_currency` only.
     pub low_balance: Option<f64>, pub low_balance_currency: Option<String>,
+    /// Opt-in: show official Codex reset credits on the hover card (primary local Codex account).
+    pub show_codex_reset_credits: bool,
+    /// Opt-in: show detailed card (window value estimate, 1d/7d/31d local usage, 31d chart, top model, cache hit rate, prompt cache countdown).
+    pub detailed_card: bool,
+    /// Balance ring calculation basis for balance-only services/extensions: "since_top_up" | "balance_only" | "budget".
+    pub balance_basis: Option<String>,
+    /// User budget amount when `balance_basis == Some("budget")`.
+    pub balance_budget: Option<f64>,
+    /// Extension identifier when `provider_id == "extension"`.
+    pub extension_id: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
@@ -262,6 +314,12 @@ pub struct AppSettings {
     /// USD→CNY 固定汇率（Round4 项目二）：纯本地设置，默认 7.2，可手改，不联网取汇；
     /// 前端所有经此折算的数字必须就近标注「按固定汇率 X.XX 估算」。
     pub usd_cny_rate: f64,
+    /// Codex 公开重置卡预告与确认消息（AI Hot News，默认开启）。
+    pub show_codex_reset_announcements: bool,
+    /// 用量报告（Recap）中用于计算「订阅回本倍数」的月订阅价格（0 = 不启用回本卡，上限 10000）。
+    pub recap_monthly_price: f64,
+    /// 用量报告（Recap）隐私开关：隐藏项目文件夹名称（替换为 项目 1、项目 2）。
+    pub recap_hide_projects: bool,
     pub providers: BTreeMap<String, ProviderConfig>,
 }
 impl Default for AppSettings {
@@ -286,6 +344,9 @@ impl Default for AppSettings {
             sync_mode:"off".into(),
             sync_connect_url:String::new(),
             display_currency:"USD".into(), usd_cny_rate:7.2,
+            show_codex_reset_announcements:true,
+            recap_monthly_price:0.0,
+            recap_hide_projects:false,
             providers }
     }
 }
@@ -303,6 +364,7 @@ impl AppSettings {
             || !self.free_x.is_finite() || !self.free_y.is_finite() || !(0.0..=1.0).contains(&self.free_x) || !(0.0..=1.0).contains(&self.free_y)
             || !["USD","CNY"].contains(&self.display_currency.as_str())
             || !self.usd_cny_rate.is_finite() || !(0.01..=10000.0).contains(&self.usd_cny_rate)
+            || !self.recap_monthly_price.is_finite() || !(0.0..=10000.0).contains(&self.recap_monthly_price)
             || !["zh","en"].contains(&self.language.as_str())
             || self.subscriptions.len()>64 || self.providers.len()>64
             || !["off","host","connect"].contains(&self.sync_mode.as_str())
@@ -316,7 +378,7 @@ impl AppSettings {
         }
         validate_token_spend_extra_paths(&self.token_spend_extra_paths)?;
         for p in &self.authorized_providers {
-            if !PROVIDERS.iter().any(|(id, _)| id == p) {
+            if p != "extension" && !PROVIDERS.iter().any(|(id, _)| id == p) {
                 return Err(format!("未知的已授权服务商: {p}"));
             }
         }
@@ -338,9 +400,11 @@ impl AppSettings {
         }
         for (id,cfg) in &self.providers {
             if cfg.elapsed_period_days.is_some_and(|d|!d.is_finite()||d<1.0/24.0||d>366.0) {return Err("自定义周期应为 1 小时至 366 天".into());}
-            if !valid_id(id) || !PROVIDERS.iter().any(|p|p.0==cfg.provider_id) || cfg.label.len()>160 { return Err("账号配置无效".into()); }
+            if !valid_id(id) || (cfg.provider_id != "extension" && !PROVIDERS.iter().any(|p|p.0==cfg.provider_id)) || cfg.label.len()>160 { return Err("账号配置无效".into()); }
             if cfg.ring_color.as_deref().is_some_and(|c|!(c.len()==7 && c.starts_with('#') && c[1..].bytes().all(|b|b.is_ascii_hexdigit()))) { return Err("圆环颜色无效".into()); }
             if cfg.low_balance.is_some_and(|v|!v.is_finite()||v<0.0) || cfg.low_balance_currency.as_deref().is_some_and(|c|c.is_empty()||c.len()>8) { return Err("余额阈值无效".into()); }
+            if cfg.balance_basis.as_deref().is_some_and(|b|!["since_top_up","balance_only","budget"].contains(&b)) { return Err("余额圆环计算方式无效".into()); }
+            if cfg.balance_budget.is_some_and(|v|!v.is_finite()||v<=0.0||v>1_000_000_000.0) { return Err("自定义预算金额无效".into()); }
             if cfg.mark_mode.as_deref().is_some_and(|m|m!="icon"&&m!="bot") { return Err("标识模式无效".into()); }
             const PERSONAS:&[&str]=&["calm","eager","steady","curious","sleepy","playful","stoic","proud"];
             if cfg.bot_persona.as_deref().is_some_and(|p|!PERSONAS.contains(&p)) { return Err("机器人个性无效".into()); }

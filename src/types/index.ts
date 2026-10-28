@@ -13,6 +13,22 @@ export interface HourlyUsage {
   calls: number;
   credit_consumed: number;
 }
+export interface CodexResetCredits {
+  status: "available" | "unreported" | "codex_missing";
+  count?: number | null;
+  next_expiry?: string | null;
+}
+export interface UsageMetricPoint {
+  t: string;
+  v: number;
+}
+export interface UsageMetric {
+  id: string;
+  label: string;
+  value: number;
+  unit?: string | null;
+  history?: UsageMetricPoint[];
+}
 export interface ProviderUsage {
   account_id: string; provider_id: string; display_name: string;
   state: "live" | "stale" | "loading" | "unavailable" | "error";
@@ -25,6 +41,9 @@ export interface ProviderUsage {
    *  null/缺省 = 渠道日志无 usage 字段或速率不足 1，前端显示「—」，不编造。 */
   tok_per_min?: number | null;
   hourly_usages?: HourlyUsage[];
+  web_auth_required?: boolean;
+  codex_reset_credits?: CodexResetCredits | null;
+  metrics?: UsageMetric[] | null;
 }
 export interface ProviderConfig {
   provider_id: string; label: string; enabled: boolean; order: number; use_local: boolean;
@@ -43,6 +62,16 @@ export interface ProviderConfig {
   secondary_window: string | null;
   /** Antigravity only: split Gemini / Claude-GPT into separate rail slots. */
   split_model_groups: boolean;
+  /** Opt-in: show official Codex reset credits on the hover card. */
+  show_codex_reset_credits?: boolean;
+  /** Opt-in: show detailed card (window value estimate, 1d/7d/31d local usage, 31d chart, top model, cache hit rate, prompt cache countdown). */
+  detailed_card?: boolean;
+  /** Balance ring calculation basis: "since_top_up" | "balance_only" | "budget". */
+  balance_basis?: "since_top_up" | "balance_only" | "budget" | null;
+  /** User budget amount when balance_basis === "budget". */
+  balance_budget?: number | null;
+  /** Extension identifier when provider_id === "extension". */
+  extension_id?: string | null;
 }
 export interface NotificationSettings { threshold: number | null; on_spent: boolean; on_reset: boolean; on_failure: boolean }
 export interface HotkeySettings { open_settings: string | null; toggle_rail: string | null }
@@ -99,6 +128,12 @@ export interface AppSettings {
   sync_mode?: "off" | "host" | "connect";
   /** connect 模式的远端 hub 地址（http(s)://host[:port]，不含路径）；host/off 时忽略。 */
   sync_connect_url?: string;
+  /** Codex 公开重置卡预告与确认消息（AI Hot News，默认开启）。 */
+  show_codex_reset_announcements?: boolean;
+  /** 用量报告（Recap）中用于计算「订阅回本倍数」的月订阅价格（0 = 不启用回本卡）。 */
+  recap_monthly_price?: number;
+  /** 用量报告（Recap）隐私开关：隐藏项目文件夹名称。 */
+  recap_hide_projects?: boolean;
   notifications: NotificationSettings; hotkeys: HotkeySettings;
   providers: Record<string, ProviderConfig>;
 }
@@ -197,3 +232,257 @@ export interface SyncDevicesSnapshot {
   generated_at?: string | null;
   devices: SyncDeviceRecord[];
 }
+
+// ---------------------------------------------------------------------------
+// Phase 1: Codex Public Reset Announcements (guanbear/Pulse-codex-reset)
+// ---------------------------------------------------------------------------
+
+export type CodexResetKind = "direct_reset" | "reset_credit";
+export type CodexResetStatus = "announced" | "confirmed";
+export type CodexResetPrecision = "exact" | "approximate" | "deadline" | "date" | "window";
+
+export interface CodexResetSchedule {
+  precision: CodexResetPrecision;
+  from: string;
+  through: string;
+  label: string;
+}
+
+export interface CodexResetPost {
+  published_at: string;
+  text: string;
+  original_text?: string | null;
+  full_original_text?: string | null;
+  url: string;
+}
+
+export interface CodexResetEvent {
+  id: string;
+  kind: CodexResetKind;
+  status: CodexResetStatus;
+  title: string;
+  scope: string;
+  created_at: string;
+  updated_at: string;
+  confirmed_at?: string | null;
+  schedule?: CodexResetSchedule | null;
+  posts: CodexResetPost[];
+  url: string;
+}
+
+export interface CodexResetHealth {
+  last_succeeded_at: string | null;
+  last_attempt_failed: boolean;
+  is_stale: boolean;
+}
+
+export interface CodexResetIncrease {
+  event_id: string;
+  detected_at: string;
+}
+
+export interface CodexResetState {
+  event: CodexResetEvent | null;
+  health: CodexResetHealth;
+  increases: Record<string, CodexResetIncrease>;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: Codex Signals (Signs of a weaker model)
+// ---------------------------------------------------------------------------
+
+export interface CodexModelSignal {
+  model: string;
+  responses: number;
+  reached_lattice: number;
+  on_lattice: number;
+  share: number | null;
+  insufficient_data: boolean;
+}
+
+export interface CodexSettingChange {
+  kind: "model" | "effort";
+  asked: string;
+  ran: string;
+  timestamp: string;
+  session_title: string;
+}
+
+export interface CodexSignalsReport {
+  span_days: number | null;
+  scanned_sessions: number;
+  judged_sessions: number;
+  unjudged_sessions: number;
+  models: CodexModelSignal[];
+  changes: CodexSettingChange[];
+  total_changes: number;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3a: Account Detailed Card & Prompt Cache Countdown
+// ---------------------------------------------------------------------------
+
+export interface WindowValueEstimate {
+  window_id: string;
+  full_usd: number;
+  used_usd: number;
+  unpriced_tokens: number;
+}
+
+export interface CardActivitySummary {
+  is_account_wide: boolean;
+  today_tokens: number;
+  today_cost_usd: number;
+  today_unpriced: number;
+  week_tokens: number;
+  week_cost_usd: number;
+  week_unpriced: number;
+  month_tokens: number;
+  month_cost_usd: number;
+  month_unpriced: number;
+  days_31: { day: string; tokens: number }[];
+  top_model: { name: string; share_percent: number } | null;
+  cache_hit_rate: number | null;
+}
+
+export interface PromptCacheChat {
+  id: string;
+  title: string;
+  replied_at: string;
+  expires_at: string;
+  lifetime_seconds: number;
+  is_minimum: boolean;
+}
+
+export interface PromptCacheStatus {
+  provider_id: string;
+  lifetime_seconds: number;
+  is_minimum: boolean;
+  live_chats: PromptCacheChat[];
+  recently_lapsed: boolean;
+}
+
+export interface AccountCardDetail {
+  account_id: string;
+  window_estimates: Record<string, WindowValueEstimate>;
+  activity: CardActivitySummary | null;
+  prompt_cache: PromptCacheStatus | null;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3b: Daily / Weekly / Monthly / Yearly Recap
+// ---------------------------------------------------------------------------
+
+export type RecapPeriodKind = "day" | "week" | "month" | "year";
+
+export interface RecapPeriodInfo {
+  kind: RecapPeriodKind;
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  in_progress: boolean;
+}
+
+export interface RecapDayItem {
+  day: string;
+  tokens: number;
+  cost_usd: number;
+  unrecorded: boolean;
+  future: boolean;
+}
+
+export interface RecapMonthItem {
+  month: string;
+  label: string;
+  tokens: number;
+  cost_usd: number;
+  unrecorded: boolean;
+  future: boolean;
+}
+
+export interface RecapModelItem {
+  model: string;
+  tokens: number;
+  share: number;
+  cost_usd: number;
+}
+
+export interface RecapAgentItem {
+  source: string;
+  label: string;
+  tokens: number;
+  share: number;
+  active_days: string[];
+  active_months: string[];
+}
+
+export interface RecapProjectItem {
+  name: string;
+  tokens: number;
+  share: number;
+  sessions: number;
+}
+
+export interface RecapBusiestHours {
+  start_hour: number;
+  end_hour: number;
+  share: number;
+}
+
+export interface RecapWorkSplit {
+  weekday_share: number;
+  weekend_share: number;
+}
+
+export interface RecapReport {
+  period: RecapPeriodInfo;
+  records_begin: string | null;
+  tokens: number;
+  previous_tokens: number | null;
+  cost_usd: number;
+  unpriced_tokens: number;
+  partial: boolean;
+  active_days: number;
+  observed_days: number;
+  total_days: number;
+  daily_average_tokens: number;
+  sessions: number;
+  current_streak: number;
+  longest_streak: number;
+  streak_chain: { day: string; active: boolean }[];
+  busiest_day: { day: string; tokens: number } | null;
+  days: RecapDayItem[];
+  months: RecapMonthItem[];
+  hours: number[];
+  peak_hour: number | null;
+  busiest_hours: RecapBusiestHours | null;
+  first_hour: number | null;
+  latest_minute: number | null;
+  late_nights: number;
+  persona: "night_owl" | "early_bird" | "day_shift" | "all_day";
+  work_split: RecapWorkSplit | null;
+  cache_hit_rate: number | null;
+  cache_savings_usd: number;
+  paid_months: number;
+  models: RecapModelItem[];
+  agents: RecapAgentItem[];
+  projects: RecapProjectItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: Extensions System
+// ---------------------------------------------------------------------------
+
+export interface ExtensionEntry {
+  id: string;
+  name: string;
+  folder_name: string;
+  executable: string;
+  timeout_seconds: number;
+  account_id: string;
+  enabled: boolean;
+  status: "ready" | "invalid_manifest" | "unsupported_schema" | "duplicate_id" | "executable_outside_folder" | "executable_missing";
+  error: string | null;
+}
+

@@ -5,7 +5,7 @@ import {listen} from "@tauri-apps/api/event";
 import {UsageRing} from "./UsageRing";
 import {orderedIds} from "../ordering";
 import {providerName} from "../pages/settings/constants";
-import type {AppSettings,ProviderUsage} from "../types";
+import type {AppSettings,CodexResetState,ProviderUsage} from "../types";
 import {useLang} from "../lib/i18n";
 export function FloatingRail({usages,settings}:{usages:ProviderUsage[];settings:AppSettings}){
   // t 的身份随语言切换而变（Provider 按 effective 重建），依赖它即可让含文案的
@@ -30,6 +30,20 @@ export function FloatingRail({usages,settings}:{usages:ProviderUsage[];settings:
   // Measured rail box (border-box) lets the collapsed edge bar mirror the rail's exact height.
   const [railBox,setRailBox]=useState<{w:number;h:number}|null>(null);
   const [antigravityAvailable, setAntigravityAvailable] = useState(false);
+  const [codexReset, setCodexReset] = useState<CodexResetState | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const stop = listen<CodexResetState>("codex-reset-updated", e => {
+      if (alive) setCodexReset(e.payload);
+    }).catch(() => null);
+    void invoke<CodexResetState>("get_codex_reset_state").then(s => {
+      if (alive && s) setCodexReset(s);
+    }).catch(() => {});
+    return () => {
+      alive = false;
+      void stop.then(fn => fn?.());
+    };
+  }, []);
   useEffect(()=>{
     const el=railRef.current;if(!el)return;
     const measure=()=>setRailBox({w:el.offsetWidth,h:el.offsetHeight});
@@ -446,10 +460,15 @@ export function FloatingRail({usages,settings}:{usages:ProviderUsage[];settings:
       } p-1.5 glass-panel text-[var(--text-1)] ${isHidden ? "invisible" : ""} ${transformCls} ${transitionCls} cursor-move touch-none ${draggingUI ? "opacity-80" : ""}`}
     >
       <div className={`flex ${top ? "flex-row space-x-2" : "flex-col space-y-1.5"} overflow-y-auto max-h-full scrollbar-none`}>
-        {slots.map(s => (
-          <UsageRing key={s.key} dataKey={s.key} usage={s.usage} settings={settings} onHover={() => { if(!draggingRef.current) setHovered(s.key); }}
-            refreshing={!!refreshing[s.account]} onClick={() => handleRingClick(s.account)} onDoubleClick={handleRingDoubleClick} lookX={lookX} />
-        ))}
+        {slots.map(s => {
+          const resetDot = s.usage.provider_id === "codex" && (settings.show_codex_reset_announcements ?? true)
+            ? (codexReset?.event?.status ?? null)
+            : null;
+          return (
+            <UsageRing key={s.key} dataKey={s.key} usage={s.usage} settings={settings} onHover={() => { if(!draggingRef.current) setHovered(s.key); }}
+              refreshing={!!refreshing[s.account]} onClick={() => handleRingClick(s.account)} onDoubleClick={handleRingDoubleClick} lookX={lookX} codexResetStatus={resetDot} />
+          );
+        })}
         {!slots.length && (
           antigravityAvailable ? (
             <button
