@@ -618,7 +618,7 @@ mod tests {
     }
 
     fn sample_snapshot_json() -> &'static [u8] {
-        br#"{
+        r#"{
           "events": [
             {
               "id": "ev-announced-1",
@@ -648,6 +648,7 @@ mod tests {
             }
           ]
         }"#
+        .as_bytes()
     }
 
     #[test]

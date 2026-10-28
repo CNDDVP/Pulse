@@ -1,6 +1,5 @@
 use crate::ledger::{database, estimate_model_cost, frozen_tz, ledger_db_path};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc, Weekday};
-use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -680,7 +679,6 @@ pub fn build_recap_from_db(
     };
 
     // Streaks within observed days of the period
-    let mut current_streak = 0u64;
     let mut longest_streak = 0u64;
     let mut running = 0u64;
     for d in &days {
@@ -694,7 +692,7 @@ pub fn build_recap_from_db(
             running = 0;
         }
     }
-    current_streak = running;
+    let current_streak = running;
 
     let observed_slice: Vec<&RecapDayItem> =
         days.iter().filter(|d| !d.future && !d.unrecorded).collect();
@@ -943,6 +941,7 @@ pub fn build_recap(kind: &str, key: Option<&str>) -> Result<RecapReport, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::params;
 
     #[test]
     fn default_period_follows_upstream_cutoff_rules() {
